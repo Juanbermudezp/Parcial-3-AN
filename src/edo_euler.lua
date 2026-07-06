@@ -1,10 +1,11 @@
 platform.apiLevel = '2.0'
 
 -- Programa TI-Nspire: solucion numerica de EDO de primer orden
--- y' = f(x,y), y(x0) = y0, por los metodos de Euler, Heun y Runge-Kutta 4
+-- y' = f(x,y), y(x0) = y0, por el metodo de Euler
+-- Muestra el desarrollo paso a paso y al final la tabla de resultados.
 
-local MAX_N = 150
-local ROW_H = 14
+local MAX_N = 100
+local ROW_H = 12
 local SCROLL_STEP = 3
 
 local fields = {
@@ -16,14 +17,14 @@ local fields = {
 }
 local focus = 1
 
-local results, errorMsg, scrollY = nil, nil, 0
+local lines, errorMsg, scrollY = nil, nil, 0
 
 local function toNumber(s)
     return tonumber(s)
 end
 
 local function fmt(v)
-    return string.format("%.6g", v)
+    return string.format("%.6f", v)
 end
 
 -- Evalua f(x,y) en el servidor de matematicas (CAS) sustituyendo x,y por
@@ -41,51 +42,25 @@ local function feval(expr, xv, yv)
     return res
 end
 
-local function euler(expr, x0, y0, h, n)
+local function solve(expr, x0, y0, h, n)
     local xs, ys = { [0] = x0 }, { [0] = y0 }
+    local log = {}
     for i = 0, n - 1 do
         local f1, err = feval(expr, xs[i], ys[i])
-        if not f1 then return nil, nil, err end
-        xs[i + 1] = xs[i] + h
-        ys[i + 1] = ys[i] + h * f1
-    end
-    return xs, ys
-end
-
-local function heun(expr, x0, y0, h, n)
-    local xs, ys = { [0] = x0 }, { [0] = y0 }
-    for i = 0, n - 1 do
-        local f1, e1 = feval(expr, xs[i], ys[i])
-        if not f1 then return nil, nil, e1 end
+        if not f1 then return nil, nil, nil, err end
         local xnext = xs[i] + h
-        local ypred = ys[i] + h * f1
-        local f2, e2 = feval(expr, xnext, ypred)
-        if not f2 then return nil, nil, e2 end
-        xs[i + 1] = xnext
-        ys[i + 1] = ys[i] + (h / 2) * (f1 + f2)
+        local ynext = ys[i] + h * f1
+        log[#log + 1] = string.format("Paso %d:", i + 1)
+        log[#log + 1] = string.format("  f(x%d,y%d)=f(%.4f,%.4f)=%.6f", i, i, xs[i], ys[i], f1)
+        log[#log + 1] = string.format("  y%d = y%d + h*f = %.4f + %.4f*%.6f", i + 1, i, ys[i], h, f1)
+        log[#log + 1] = string.format("  y%d = %.6f   (x%d=%.4f)", i + 1, ynext, i + 1, xnext)
+        xs[i + 1], ys[i + 1] = xnext, ynext
     end
-    return xs, ys
-end
-
-local function rk4(expr, x0, y0, h, n)
-    local xs, ys = { [0] = x0 }, { [0] = y0 }
-    for i = 0, n - 1 do
-        local k1, e1 = feval(expr, xs[i], ys[i])
-        if not k1 then return nil, nil, e1 end
-        local k2, e2 = feval(expr, xs[i] + h / 2, ys[i] + h / 2 * k1)
-        if not k2 then return nil, nil, e2 end
-        local k3, e3 = feval(expr, xs[i] + h / 2, ys[i] + h / 2 * k2)
-        if not k3 then return nil, nil, e3 end
-        local k4, e4 = feval(expr, xs[i] + h, ys[i] + h * k3)
-        if not k4 then return nil, nil, e4 end
-        xs[i + 1] = xs[i] + h
-        ys[i + 1] = ys[i] + (h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
-    end
-    return xs, ys
+    return xs, ys, log
 end
 
 local function compute()
-    errorMsg, results, scrollY = nil, nil, 0
+    errorMsg, lines, scrollY = nil, nil, 0
 
     local expr = fields[1].value
     local x0 = toNumber(fields[2].value)
@@ -116,16 +91,18 @@ local function compute()
         return
     end
 
-    local xe, ye, errE = euler(expr, x0, y0, h, n)
-    if not xe then errorMsg = errE; return end
-    local xh, yh, errH = heun(expr, x0, y0, h, n)
-    if not xh then errorMsg = errH; return end
-    local xr, yr, errR = rk4(expr, x0, y0, h, n)
-    if not xr then errorMsg = errR; return end
+    local xs, ys, log, err = solve(expr, x0, y0, h, n)
+    if not xs then
+        errorMsg = err
+        return
+    end
 
-    results = {}
+    lines = log
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "TABLA DE RESULTADOS"
+    lines[#lines + 1] = "  i        x            y"
     for i = 0, n do
-        results[#results + 1] = { x = xe[i], e = ye[i], h = yh[i], r = yr[i] }
+        lines[#lines + 1] = string.format("  %-3d  %10s  %12s", i, fmt(xs[i]), fmt(ys[i]))
     end
 end
 
@@ -136,7 +113,7 @@ function on.paint(gc)
     gc:setColorRGB(0, 0, 0)
 
     gc:setFont("sansserif", "b", 10)
-    gc:drawString("EDO: Euler / Heun / Runge-Kutta 4", 2, 2, "top")
+    gc:drawString("EDO: metodo de Euler", 2, 2, "top")
 
     gc:setFont("sansserif", "r", 9)
     local y = 18
@@ -145,18 +122,18 @@ function on.paint(gc)
         gc:drawString(f.label, 2, y, "top")
         local boxX, boxW = labelW, w - labelW - 4
         gc:setColorRGB(focus == i and 205 or 235, focus == i and 225 or 235, focus == i and 255 or 235)
-        gc:fillRect(boxX, y, boxW, ROW_H)
+        gc:fillRect(boxX, y, boxW, 14)
         gc:setColorRGB(0, 0, 0)
-        gc:drawRect(boxX, y, boxW, ROW_H)
+        gc:drawRect(boxX, y, boxW, 14)
         gc:drawString(f.value, boxX + 2, y, "top")
-        y = y + ROW_H + 2
+        y = y + 16
     end
 
     gc:setFont("sansserif", "r", 7)
-    gc:drawString("Enter=calcular  Tab=cambiar campo  Arriba/Abajo=desplazar tabla", 2, y, "top")
+    gc:drawString("Enter=calcular  Tab=cambiar campo  Arriba/Abajo=desplazar", 2, y, "top")
     y = y + 12
 
-    gc:setFont("sansserif", "r", 9)
+    gc:setFont("sansserif", "r", 8)
     if errorMsg then
         gc:setColorRGB(200, 0, 0)
         gc:drawString(errorMsg, 2, y, "top")
@@ -164,40 +141,15 @@ function on.paint(gc)
         return
     end
 
-    if not results then
+    if not lines then
         gc:drawString("Ingrese los datos y presione Enter", 2, y, "top")
         return
     end
 
-    local cols = {
-        { name = "i",     w = 20 },
-        { name = "x",     w = 55 },
-        { name = "Euler", w = 70 },
-        { name = "Heun",  w = 70 },
-        { name = "RK4",   w = 70 },
-    }
-
-    gc:setColorRGB(220, 220, 220)
-    gc:fillRect(2, y, w - 4, ROW_H)
-    gc:setColorRGB(0, 0, 0)
-    local cx = 2
-    for _, c in ipairs(cols) do
-        gc:drawString(c.name, cx, y, "top")
-        cx = cx + c.w
-    end
-    y = y + ROW_H
-    gc:drawLine(2, y, w - 2, y)
-
     local visibleRows = math.floor((hgt - y) / ROW_H)
-    local lastRow = math.min(#results, scrollY + visibleRows)
+    local lastRow = math.min(#lines, scrollY + visibleRows)
     for r = scrollY + 1, lastRow do
-        local row = results[r]
-        local vals = { tostring(r - 1), fmt(row.x), fmt(row.e), fmt(row.h), fmt(row.r) }
-        cx = 2
-        for ci, c in ipairs(cols) do
-            gc:drawString(vals[ci], cx, y, "top")
-            cx = cx + c.w
-        end
+        gc:drawString(lines[r], 2, y, "top")
         y = y + ROW_H
     end
 end
@@ -225,8 +177,8 @@ function on.enterKey()
 end
 
 function on.arrowKey(key)
-    if not results then return end
-    local maxScroll = math.max(0, #results - 1)
+    if not lines then return end
+    local maxScroll = math.max(0, #lines - 1)
     if key == "down" then
         scrollY = math.min(scrollY + SCROLL_STEP, maxScroll)
     elseif key == "up" then
@@ -238,12 +190,12 @@ end
 function on.mouseDown(x, y)
     local yy = 18
     for i in ipairs(fields) do
-        if y >= yy and y <= yy + ROW_H then
+        if y >= yy and y <= yy + 14 then
             focus = i
             platform.window:invalidate()
             return
         end
-        yy = yy + ROW_H + 2
+        yy = yy + 16
     end
 end
 
